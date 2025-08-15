@@ -1,4 +1,4 @@
-# Example Python file with various technical debt issues for testing
+++ b/example_single_file.py
 
 class LargeExampleClass:
     """This class demonstrates multiple technical debt issues"""
@@ -19,26 +19,40 @@ class LargeExampleClass:
         """This method is intentionally long to trigger the long method detector"""
         result = []
         
-        # Line 1
-        if param1 is not None:
-            result.append(param1)
+        # Validate and collect parameters
+        result = self._validate_and_collect_params(param1, param2, param3)
         
-        # Line 5
-        if param2 is not None:
-            result.append(param2)
+        # Process number range
+        result.extend(self._process_number_range())
         
-        # Line 9
-        if param3 is not None:
-            result.append(param3)
+        # Categorize results
+        self._categorize_results(result)
         
-        # Line 13
+        # Update status and process cache
+        self._update_status_and_process_cache()
+        
+        return result
+    
+    def _validate_and_collect_params(self, param1, param2, param3):
+        """Validate and collect non-None parameters"""
+        result = []
+        for param in [param1, param2, param3]:
+            if param is not None:
+                result.append(param)
+        return result
+    
+    def _process_number_range(self):
+        """Process number range with even/odd logic"""
+        processed = []
         for i in range(10):
             if i % 2 == 0:
-                result.append(i * 2)
+                processed.append(i * 2)
             else:
-                result.append(i * 3)
-        
-        # Line 20
+                processed.append(i * 3)
+        return processed
+    
+    def _categorize_results(self, result):
+        """Categorize results into data, cache, and results based on value"""
         for item in result:
             if item > 10:
                 self.data.append(item)
@@ -46,20 +60,20 @@ class LargeExampleClass:
                 self.cache[str(item)] = item
             else:
                 self.results.append(item)
-        
-        # Line 28
+    
+    def _update_status_and_process_cache(self):
+        """Update status based on data and results, and process cache values"""
+        # Update status based on collections
         if len(self.data) > 0:
             self.count += len(self.data)
         
-        # Line 32
         if len(self.cache) > 0:
             self.status = "cached"
         
-        # Line 36
         if len(self.results) > 0:
             self.status = "processed"
         
-        # Line 40
+        # Process cache values and categorize messages
         for key, value in self.cache.items():
             if value > 15:
                 self.errors.append(f"Value too high: {value}")
@@ -67,9 +81,6 @@ class LargeExampleClass:
                 self.warnings.append(f"Value high: {value}")
             else:
                 self.info.append(f"Value normal: {value}")
-        
-        # Line 48
-        return result
     
     def complex_method_with_many_branches(self, x, y, z):
         """This method has high cyclomatic complexity"""
