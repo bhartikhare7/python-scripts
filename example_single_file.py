@@ -112,16 +112,6 @@ class LargeExampleClass:
             else:
                 data.append(i * 3)
         return data
-
-def unused_function():
-    """This function is never called - dead code"""
-    return "This function is unused"
-
-def main():
-    """Main function that uses the class"""
-    example = LargeExampleClass()
-    result = example.simple_method_using_other_methods(1, 2, 3)
-    complex_result = example.complex_method_with_many_branches(5, 3, 1)
     
     print(f"Result: {result}")
     print(f"Complex result: {complex_result}")
