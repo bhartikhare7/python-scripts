@@ -126,10 +126,6 @@ def unused_function():
     """This function is never called - dead code"""
     return "This function is unused"
 
-def another_unused_function(param):
-    """Another unused function"""
-    return param * 2
-
 def main():
     """Main function that uses the class"""
     example = LargeExampleClass()
