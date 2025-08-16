@@ -122,9 +122,6 @@ def main():
     example = LargeExampleClass()
     result = example.very_long_method_with_many_lines(1, 2, 3)
     complex_result = example.complex_method_with_many_branches(5, 3, 1)
-    
-    print(f"Result: {result}")
-    print(f"Complex result: {complex_result}")
 
 if __name__ == "__main__":
     main()
