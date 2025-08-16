@@ -102,15 +102,6 @@ class LargeExampleClass:
         else:
             return 0
     
-    def duplicate_code_block_one(self):
-        """First instance of duplicate code"""
-        data = []
-        for i in range(5):
-            if i % 2 == 0:
-                data.append(i * 2)
-            else:
-                data.append(i * 3)
-        return data
     
     def duplicate_code_block_two(self):
         """Second instance of duplicate code"""
