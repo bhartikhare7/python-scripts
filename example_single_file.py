@@ -120,7 +120,7 @@ def unused_function():
 def main():
     """Main function that uses the class"""
     example = LargeExampleClass()
-    result = example.very_long_method_with_many_lines(1, 2, 3)
+    result = example.simple_method_using_other_methods(1, 2, 3)
     complex_result = example.complex_method_with_many_branches(5, 3, 1)
     
     print(f"Result: {result}")
