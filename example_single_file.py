@@ -1,4 +1,4 @@
-++ b/example_single_file.py
+class LargeExampleClass:
     """This class demonstrates multiple technical debt issues"""
     
     def __init__(self):
