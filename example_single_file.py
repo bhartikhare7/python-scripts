@@ -13,7 +13,7 @@ class LargeExampleClass:
         self.info = []
         self.debug = []
     
-    def very_long_method_with_many_lines(self, param1, param2, param3):
+    def simple_method_using_other_methods(self, param1, param2, param3):
         """This method is intentionally long to trigger the long method detector"""
         result = []
         
