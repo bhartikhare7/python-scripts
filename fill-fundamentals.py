@@ -307,25 +307,37 @@ def update_metrics(stock: dict, yahoo_data: dict, detailed_data: dict, data_sour
 
 
 def _extract_statements_data(detailed_data: dict, data_source: str):
+    """Update fundamentals data for a stock using the specified data source"""
     """Extract and prepare statements data based on data source"""
-    if data_source == 'yahoo':
-        income_statements = detailed_data.get('incomeStatementHistory', {}).get('incomeStatementHistory', [])[:4]
-        balance_sheets = detailed_data.get('balanceSheetHistory', {}).get('balanceSheetStatements', [])[:4]
-        cashflows = detailed_data.get('cashflowStatementHistory', {}).get('cashflowStatements', [])[:4]
-    else:  # Alpha Vantage
-        income_statements = detailed_data.get('income', {}).get('quarterlyReports', [])[:4]
-        balance_sheets = detailed_data.get('balance', {}).get('quarterlyReports', [])[:4]
-        cashflows = detailed_data.get('cashflow', {}).get('quarterlyReports', [])[:4]
-    
-    return zip(income_statements, balance_sheets, cashflows)
-
-
-def _extract_period_info(income_stmt: dict, data_source: str):
-    """Extract period information from income statement"""
+        _process_all_statements(stock, detailed_data, data_source)
     if data_source == 'yahoo':
         if not income_stmt.get('endDate'):
             return None, None, None
         end_date = datetime.fromtimestamp(income_stmt['endDate']['raw'], tz=timezone.utc)
+
+
+def _process_all_statements(stock: dict, detailed_data: dict, data_source: str):
+    """Process all financial statements for a stock"""
+    statements = _extract_statements_data(detailed_data, data_source)
+
+    for i, (income_stmt, balance_sheet, cashflow) in enumerate(statements):
+        _process_single_statement(stock, income_stmt, balance_sheet, cashflow, detailed_data, data_source)
+
+
+def _process_single_statement(stock: dict, income_stmt: dict, balance_sheet: dict, 
+                            cashflow: dict, detailed_data: dict, data_source: str):
+    """Process a single financial statement period"""
+    end_date, quarter, year = _extract_period_info(income_stmt, data_source)
+    if not end_date:
+        return
+
+    # Prepare fundamentals data based on data source
+    if data_source == 'yahoo':
+        fundamentals = _prepare_yahoo_fundamentals(stock, quarter, year, income_stmt, balance_sheet, cashflow, detailed_data)
+    else:
+        fundamentals = _prepare_alpha_vantage_fundamentals(stock, quarter, year, income_stmt, balance_sheet, cashflow, detailed_data)
+
+    _upsert_fundamentals_record(stock, fundamentals, quarter, year)
     else:  # Alpha Vantage
         if not income_stmt.get('fiscalDateEnding'):
             return None, None, None
