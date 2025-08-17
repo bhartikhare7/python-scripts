@@ -306,95 +306,121 @@ def update_metrics(stock: dict, yahoo_data: dict, detailed_data: dict, data_sour
         raise e
 
 
+def _extract_statements_data(detailed_data: dict, data_source: str):
+    """Extract and prepare statements data based on data source"""
+    if data_source == 'yahoo':
+        income_statements = detailed_data.get('incomeStatementHistory', {}).get('incomeStatementHistory', [])[:4]
+        balance_sheets = detailed_data.get('balanceSheetHistory', {}).get('balanceSheetStatements', [])[:4]
+        cashflows = detailed_data.get('cashflowStatementHistory', {}).get('cashflowStatements', [])[:4]
+    else:  # Alpha Vantage
+        income_statements = detailed_data.get('income', {}).get('quarterlyReports', [])[:4]
+        balance_sheets = detailed_data.get('balance', {}).get('quarterlyReports', [])[:4]
+        cashflows = detailed_data.get('cashflow', {}).get('quarterlyReports', [])[:4]
+    
+    return zip(income_statements, balance_sheets, cashflows)
+
+
+def _extract_period_info(income_stmt: dict, data_source: str):
+    """Extract period information from income statement"""
+    if data_source == 'yahoo':
+        if not income_stmt.get('endDate'):
+            return None, None, None
+        end_date = datetime.fromtimestamp(income_stmt['endDate']['raw'], tz=timezone.utc)
+    else:  # Alpha Vantage
+        if not income_stmt.get('fiscalDateEnding'):
+            return None, None, None
+        end_date = datetime.fromisoformat(income_stmt['fiscalDateEnding'])
+        end_date = end_date.replace(tzinfo=timezone.utc)
+    
+    quarter = (end_date.month - 1) // 3 + 1
+    year = end_date.year
+    return end_date, quarter, year
+
+
+def _prepare_yahoo_fundamentals(stock: dict, quarter: int, year: int, income_stmt: dict, 
+                               balance_sheet: dict, cashflow: dict, detailed_data: dict):
+    """Prepare fundamentals data for Yahoo Finance source"""
+    return {
+        'stock_id': stock['ticker'],
+        'period_type': 'QUARTER',
+        'quarter': quarter,
+        'year': year,
+        'revenue': process_financial_value(income_stmt.get('totalRevenue')),
+        'expenses': process_financial_value(income_stmt.get('totalOperatingExpenses')),
+        'profit': process_financial_value(income_stmt.get('grossProfit')),
+        'assets': process_financial_value(balance_sheet.get('totalAssets')),
+        'liabilities': process_financial_value(balance_sheet.get('totalLiabilities')),
+        'operating_cashflow': process_financial_value(cashflow.get('totalCashFromOperatingActivities')),
+        'investing_cashflow': process_financial_value(cashflow.get('totalCashFromInvestingActivities')),
+        'financing_cashflow': process_financial_value(cashflow.get('totalCashFromFinancingActivities')),
+        'pe_ratio': process_financial_value(detailed_data.get('defaultKeyStatistics', {}).get('forwardPE')),
+        'ps_ratio': process_financial_value(detailed_data.get('defaultKeyStatistics', {}).get('priceToSalesTrailing12Months')),
+        'roe': process_financial_value(detailed_data.get('defaultKeyStatistics', {}).get('returnOnEquity')),
+        'debt_to_equity': process_financial_value(detailed_data.get('defaultKeyStatistics', {}).get('debtToEquity')),
+    }
+
+
+def _prepare_alpha_vantage_fundamentals(stock: dict, quarter: int, year: int, income_stmt: dict, 
+                                       balance_sheet: dict, cashflow: dict, detailed_data: dict):
+    """Prepare fundamentals data for Alpha Vantage source"""
+    print(f"AV fundamental data for {stock} : {detailed_data}")
+    return {
+        'stock_id': stock['ticker'],
+        'period_type': 'QUARTER',
+        'quarter': quarter,
+        'year': year,
+        'revenue': float(income_stmt.get('totalRevenue', 0)) or None,
+        'expenses': float(income_stmt.get('totalExpenses', 0)) or None,
+        'profit': float(income_stmt.get('grossProfit', 0)) or None,
+        'assets': float(balance_sheet.get('totalAssets', 0)) or None,
+        'liabilities': float(balance_sheet.get('totalLiabilities', 0)) or None,
+        'operating_cashflow': float(cashflow.get('operatingCashflow', 0)) or None,
+        'investing_cashflow': float(cashflow.get('cashflowFromInvestment', 0)) or None,
+        'financing_cashflow': float(cashflow.get('cashflowFromFinancing', 0)) or None,
+        'pe_ratio': float(detailed_data.get('overview', {}).get('PERatio', 0)) or None,
+        'ps_ratio': float(detailed_data.get('overview', {}).get('PriceToSalesRatioTTM', 0)) or None,
+        'roe': float(detailed_data.get('overview', {}).get('ReturnOnEquityTTM', 0)) or None,
+        'debt_to_equity': float(detailed_data.get('overview', {}).get('DebtToEquityRatio', 0)) or None,
+    }
+
+
+def _upsert_fundamentals_record(stock: dict, fundamentals: dict, quarter: int, year: int):
+    """Upsert fundamentals record to database"""
+    # Check for existing entry
+    existing = supabase.table('stock_fundamentals').select('*').eq('stock_id', stock['ticker']) \
+        .eq('quarter', quarter).eq('year', year).execute()
+    
+    fundamentals['created_at'] = datetime.now(timezone.utc).isoformat()
+    # Remove None values
+    fundamentals = {k: v for k, v in fundamentals.items() if v is not None}
+    
+    if existing.data:
+        # Update existing record
+        fundamentals['id'] = existing.data[0]['id']
+        supabase.table('stock_fundamentals').update(fundamentals).eq('id', fundamentals['id']).execute()
+        print(f'Updated fundamentals for {stock["ticker"]} Q{quarter} {year}')
+    else:
+        # Insert new record
+        supabase.table('stock_fundamentals').insert(fundamentals).execute()
+        print(f'Added new fundamentals for {stock["ticker"]} Q{quarter} {year}')
+
+
 def update_fundamentals(stock: dict, detailed_data: dict, data_source: str = 'yahoo'):
     try:
-        if data_source == 'yahoo':
-            income_statements = detailed_data.get('incomeStatementHistory', {}).get('incomeStatementHistory', [])[:4]
-            balance_sheets = detailed_data.get('balanceSheetHistory', {}).get('balanceSheetStatements', [])[:4]
-            cashflows = detailed_data.get('cashflowStatementHistory', {}).get('cashflowStatements', [])[:4]
-            statements = zip(income_statements, balance_sheets, cashflows)
-        else:  # Alpha Vantage
-            # Alpha Vantage provides quarterly reports
-            income_statements = detailed_data.get('income', {}).get('quarterlyReports', [])[:4]
-            balance_sheets = detailed_data.get('balance', {}).get('quarterlyReports', [])[:4]
-            cashflows = detailed_data.get('cashflow', {}).get('quarterlyReports', [])[:4]
-            statements = zip(income_statements, balance_sheets, cashflows)
+        statements = _extract_statements_data(detailed_data, data_source)
 
         for i, (income_stmt, balance_sheet, cashflow) in enumerate(statements):
-            if data_source == 'yahoo':
-                if not income_stmt.get('endDate'):
-                    continue
-                end_date = datetime.fromtimestamp(income_stmt['endDate']['raw'], tz=timezone.utc)
-            else:  # Alpha Vantage
-                if not income_stmt.get('fiscalDateEnding'):
-                    continue
-                end_date = datetime.fromisoformat(income_stmt['fiscalDateEnding'])
-                end_date = end_date.replace(tzinfo=timezone.utc)
-
-            quarter = (end_date.month - 1) // 3 + 1
-            year = end_date.year
-
-            # Check for existing entry
-            existing = supabase.table('stock_fundamentals').select('*').eq('stock_id', stock['ticker']) \
-                .eq('quarter', quarter).eq('year', year).execute()
+            end_date, quarter, year = _extract_period_info(income_stmt, data_source)
+            if not end_date:
+                continue
 
             # Prepare fundamentals data based on data source
             if data_source == 'yahoo':
-                fundamentals = {
-                    'stock_id': stock['ticker'],
-                    'period_type': 'QUARTER',
-                    'quarter': quarter,
-                    'year': year,
-                    'revenue': process_financial_value(income_stmt.get('totalRevenue')),
-                    'expenses': process_financial_value(income_stmt.get('totalOperatingExpenses')),
-                    'profit': process_financial_value(income_stmt.get('grossProfit')),
-                    'assets': process_financial_value(balance_sheet.get('totalAssets')),
-                    'liabilities': process_financial_value(balance_sheet.get('totalLiabilities')),
-                    'operating_cashflow': process_financial_value(cashflow.get('totalCashFromOperatingActivities')),
-                    'investing_cashflow': process_financial_value(cashflow.get('totalCashFromInvestingActivities')),
-                    'financing_cashflow': process_financial_value(cashflow.get('totalCashFromFinancingActivities')),
-                    'pe_ratio': process_financial_value(detailed_data.get('defaultKeyStatistics', {}).get('forwardPE')),
-                    'ps_ratio': process_financial_value(
-                        detailed_data.get('defaultKeyStatistics', {}).get('priceToSalesTrailing12Months')),
-                    'roe': process_financial_value(detailed_data.get('defaultKeyStatistics', {}).get('returnOnEquity')),
-                    'debt_to_equity': process_financial_value(
-                        detailed_data.get('defaultKeyStatistics', {}).get('debtToEquity')),
-                }
-            else: # Alpha Vantage
-                print(f"AV fundamental data for {stock} : {detailed_data}")
-                fundamentals = {
-                    'stock_id': stock['ticker'],
-                    'period_type': 'QUARTER',
-                    'quarter': quarter,
-                    'year': year,
-                    'revenue': float(income_stmt.get('totalRevenue', 0)) or None,
-                    'expenses': float(income_stmt.get('totalExpenses', 0)) or None,
-                    'profit': float(income_stmt.get('grossProfit', 0)) or None,
-                    'assets': float(balance_sheet.get('totalAssets', 0)) or None,
-                    'liabilities': float(balance_sheet.get('totalLiabilities', 0)) or None,
-                    'operating_cashflow': float(cashflow.get('operatingCashflow', 0)) or None,
-                    'investing_cashflow': float(cashflow.get('cashflowFromInvestment', 0)) or None,
-                    'financing_cashflow': float(cashflow.get('cashflowFromFinancing', 0)) or None,
-                    'pe_ratio': float(detailed_data.get('overview', {}).get('PERatio', 0)) or None,
-                    'ps_ratio': float(detailed_data.get('overview', {}).get('PriceToSalesRatioTTM', 0)) or None,
-                    'roe': float(detailed_data.get('overview', {}).get('ReturnOnEquityTTM', 0)) or None,
-                    'debt_to_equity': float(detailed_data.get('overview', {}).get('DebtToEquityRatio', 0)) or None,
-                }
-
-            fundamentals['created_at'] = datetime.now(timezone.utc).isoformat()
-
-            # Remove None values
-            fundamentals = {k: v for k, v in fundamentals.items() if v is not None}
-
-            if existing.data:
-                # Update existing record
-                fundamentals['id'] = existing.data[0]['id']
-                supabase.table('stock_fundamentals').update(fundamentals).eq('id', fundamentals['id']).execute()
-                print(f'Updated fundamentals for {stock["ticker"]} Q{quarter} {year} using {data_source} data')
+                fundamentals = _prepare_yahoo_fundamentals(stock, quarter, year, income_stmt, balance_sheet, cashflow, detailed_data)
             else:
-                # Insert new record
-                supabase.table('stock_fundamentals').insert(fundamentals).execute()
-                print(f'Added new fundamentals for {stock["ticker"]} Q{quarter} {year} using {data_source} data')
+                fundamentals = _prepare_alpha_vantage_fundamentals(stock, quarter, year, income_stmt, balance_sheet, cashflow, detailed_data)
+
+            _upsert_fundamentals_record(stock, fundamentals, quarter, year)
 
     except Exception as e:
         print(f'Error updating fundamentals for {stock["ticker"]}: {e}')
