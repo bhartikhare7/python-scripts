@@ -11,19 +11,6 @@ from typing import Optional, Dict, Any
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-def fetch_stock_data(symbol: str, session) -> Optional[Dict[str, Any]]:
-    """
-    Try Yahoo Finance first, then fall back to Alpha Vantage if Yahoo fails
-    """
-    # First attempt with Yahoo
-    yahoo_data = fetch_yahoo_data(symbol, session)
-    if yahoo_data:
-        return yahoo_data
-
-    print(f"Yahoo Finance failed for {symbol}, trying Alpha Vantage...")
-    # If Yahoo fails, try Alpha Vantage
-    return fetch_alpha_vantage_data(symbol)
-
 
 def fetch_alpha_vantage_data(symbol: str, max_retries=1) -> Optional[Dict[str, Any]]:
     """
