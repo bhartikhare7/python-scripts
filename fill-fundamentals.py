@@ -27,16 +27,24 @@ def fetch_stock_data(symbol: str, session) -> Optional[Dict[str, Any]]:
 
 def fetch_alpha_vantage_data(symbol: str, max_retries=1) -> Optional[Dict[str, Any]]:
     """
-    Fetch stock data from Alpha Vantage API
+    Fetch stock data from Alpha Vantage API - coordinates multiple endpoint calls
     """
     if not ALPHA_VANTAGE_API_KEY:
         print("Alpha Vantage API key not found in environment variables")
         return None
 
-    base_url = "https://www.alphavantage.co/query"
+    endpoints = _get_alpha_vantage_endpoints(symbol)
+    result = _fetch_all_alpha_vantage_endpoints(endpoints, max_retries)
+    
+    if not result:
+        return None
+        
+    return process_alpha_vantage_data(result)
 
-    # We'll need multiple endpoints to get all the data
-    endpoints = {
+
+def _get_alpha_vantage_endpoints(symbol: str) -> Dict[str, Dict[str, str]]:
+    """Get Alpha Vantage API endpoints configuration"""
+    return {
         'overview': {
             'function': 'OVERVIEW',
             'symbol': symbol
@@ -112,46 +120,59 @@ def process_alpha_vantage_data(data: Dict[str, Any]) -> Optional[Dict[str, Any]]
         overview_data = data['overview']
         income_data = data['income'].get('annualReports', [{}])[0]  # Most recent year
         balance_data = data['balance'].get('annualReports', [{}])[0]
+
+
+def _fetch_all_alpha_vantage_endpoints(endpoints: Dict[str, Dict[str, str]], max_retries: int) -> Optional[Dict[str, Any]]:
+    """Fetch data from all Alpha Vantage endpoints"""
+    result = {}
+    
+    for endpoint_name, params in endpoints.items():
+        endpoint_data = _fetch_single_alpha_vantage_endpoint(endpoint_name, params, max_retries)
+        if endpoint_data is None:
+            return None
+        result[endpoint_name] = endpoint_data
+    
+    return result
+
+
+def _fetch_single_alpha_vantage_endpoint(endpoint_name: str, params: Dict[str, str], max_retries: int) -> Optional[Dict[str, Any]]:
+    """Fetch data from a single Alpha Vantage endpoint with retry logic"""
+    base_url = "https://www.alphavantage.co/query"
+    
+    for attempt in range(max_retries):
+        try:
+            # Add API key to parameters
+            params['apikey'] = ALPHA_VANTAGE_API_KEY
+
+            # Add delay to respect rate limits
+            time.sleep(2 + random.uniform(0, 1))
+
+            response = requests.get(base_url, params=params)
+
+            if response.status_code == 429:
+                print(f"Rate limit hit for {endpoint_name}, cooling off...")
+                time.sleep(30 + random.uniform(0, 5))
+                continue
+
+            response.raise_for_status()
+            data = response.json()
+
+            # Check for API limit message
+            if "Note" in data and "API call frequency" in data["Note"]:
+                print(f"Alpha Vantage API limit reached, cooling off...")
+                time.sleep(30 + random.uniform(0, 5))
+                continue
+
+            return data
+
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"Error fetching {endpoint_name} data from Alpha Vantage: {e}")
+                return None
+            time.sleep(2 ** attempt + random.uniform(0, 1))
+            continue
         cashflow_data = data['cashflow'].get('annualReports', [{}])[0]
-
-        return {
-            'currentPrice': float(quote_data.get('05. price', 0)),
-            'volume': int(quote_data.get('06. volume', 0)),
-            'marketCap': float(overview_data.get('MarketCapitalization', 0)),
-            'financials': {
-                'income': {
-                    'totalRevenue': float(income_data.get('totalRevenue', 0)),
-                    'netIncome': float(income_data.get('netIncome', 0)),
-                    'grossProfit': float(income_data.get('grossProfit', 0)),
-                },
-                'balance': {
-                    'totalAssets': float(balance_data.get('totalAssets', 0)),
-                    'totalLiabilities': float(balance_data.get('totalLiabilities', 0)),
-                    'totalEquity': float(balance_data.get('totalShareholderEquity', 0)),
-                },
-                'cashflow': {
-                    'operatingCashflow': float(cashflow_data.get('operatingCashflow', 0)),
-                    'capitalExpenditures': float(cashflow_data.get('capitalExpenditures', 0)),
-                }
-            }
-        }
-    except Exception as e:
-        print(f"Error processing Alpha Vantage data: {e}")
-        return None
-
-
-# Modified main processing function
-def process_stock(symbol: str, session) -> Optional[Dict[str, Any]]:
-    """
-    Process a stock using both Yahoo Finance and Alpha Vantage as fallback
-    """
-    try:
-        # Try Yahoo Finance first
-        yahoo_data = fetch_yahoo_data(symbol, session)
-        if yahoo_data:
-            return yahoo_data
-
-        print(f"Yahoo Finance failed for {symbol}, waiting 30 seconds before trying Alpha Vantage...")
+    return None
         # time.sleep(30)  # Cool off period
 
         # Try Alpha Vantage as fallback
