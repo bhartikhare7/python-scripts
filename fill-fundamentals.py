@@ -398,12 +398,113 @@ def _upsert_fundamentals_record(stock: dict, fundamentals: dict, quarter: int, y
         # Update existing record
         fundamentals['id'] = existing.data[0]['id']
         supabase.table('stock_fundamentals').update(fundamentals).eq('id', fundamentals['id']).execute()
-        print(f'Updated fundamentals for {stock["ticker"]} Q{quarter} {year}')
-    else:
-        # Insert new record
-        supabase.table('stock_fundamentals').insert(fundamentals).execute()
-        print(f'Added new fundamentals for {stock["ticker"]} Q{quarter} {year}')
+def _fetch_stocks_from_database():
+    """Fetch all stocks from the database"""
+    try:
+        stocks = supabase.table('stocks').select('*').execute().data
+        print(f"all stocks data {stocks}")
+        return stocks
+    except Exception as e:
+        print(f"Error fetching stocks from database: {e}")
+        return None
 
+
+def _check_update_needs(stock: dict):
+    """Check if stock needs metrics or fundamentals updates"""
+    current_time = datetime.now(timezone.utc)
+    
+    # Check metrics update need
+    metrics = supabase.table('stock_metrics').select('updated_at').eq('stock_id', stock['ticker']).execute()
+    if metrics.data:
+        last_update = datetime.fromisoformat(metrics.data[0]['updated_at'])
+        if last_update.tzinfo is None:
+            last_update = last_update.replace(tzinfo=timezone.utc)
+        needs_metrics = (current_time - last_update) > timedelta(minutes=15)
+    else:
+        needs_metrics = True
+
+    # Check fundamentals update need
+    fundamentals = supabase.table('stock_fundamentals').select('created_at').eq('stock_id', stock['ticker']) \
+        .order('created_at', desc=True).limit(1).execute()
+    if fundamentals.data:
+        last_fundamental = datetime.fromisoformat(fundamentals.data[0]['created_at'])
+        if last_fundamental.tzinfo is None:
+            last_fundamental = last_fundamental.replace(tzinfo=timezone.utc)
+        needs_fundamentals = (current_time - last_fundamental) > timedelta(days=1)
+    else:
+        needs_fundamentals = True
+    
+    return needs_metrics, needs_fundamentals
+
+
+def _fetch_stock_data_with_fallback(stock: dict, session):
+    """Fetch stock data using Yahoo Finance with Alpha Vantage fallback"""
+    # Try Yahoo Finance first
+    yahoo_data = fetch_yahoo_data(stock['ticker'], session)
+    if yahoo_data:
+        print(f"sleep for 2 sec after YF returns response for {stock}")
+        time.sleep(2)
+        detailed_data = fetch_detailed_yahoo_data(stock['ticker'], session)
+        return yahoo_data, detailed_data, 'yahoo'
+    
+    # If Yahoo fails, try Alpha Vantage
+    print(f"Yahoo Finance failed for {stock['ticker']}, trying Alpha Vantage...")
+    alpha_data = fetch_alpha_vantage_data(stock['ticker'])
+    if alpha_data:
+        print(f"sleep for 15 sec after AV returns response for {stock}")
+        time.sleep(15)  # immediately sleep to avoid rate limit
+        return alpha_data, alpha_data, 'alpha_vantage'
+    
+    return None, None, None
+
+
+def _update_stock_data(stock: dict, yahoo_data: dict, detailed_data: dict, 
+                      data_source: str, needs_metrics: bool, needs_fundamentals: bool):
+    """Update stock metrics and fundamentals if needed"""
+    try:
+        if needs_metrics:
+            update_metrics(stock, yahoo_data, detailed_data, data_source)
+            print(f'Updated metrics for {stock["ticker"]} using {data_source} data')
+
+        if needs_fundamentals:
+            update_fundamentals(stock, detailed_data, data_source)
+            print(f'Updated fundamentals for {stock["ticker"]} using {data_source} data')
+
+        print(f'Completed processing {stock["ticker"]}')
+    except Exception as update_error:
+        print(f'Error updating database for {stock["ticker"]}: {update_error}')
+        raise update_error
+
+
+def _process_single_stock(stock: dict, session):
+    """Process a single stock for updates"""
+    try:
+        print(f'Processing {stock["ticker"]}...')
+        
+        needs_metrics, needs_fundamentals = _check_update_needs(stock)
+        
+        if needs_metrics or needs_fundamentals:
+            yahoo_data, detailed_data, data_source = _fetch_stock_data_with_fallback(stock, session)
+            
+            if not yahoo_data or not detailed_data:
+                print(f'Skipping {stock["ticker"]} - failed to fetch data from both sources')
+                return
+            
+            _update_stock_data(stock, yahoo_data, detailed_data, data_source, needs_metrics, needs_fundamentals)
+        else:
+            print(f'Skipping {stock["ticker"]} - no update needed')
+        
+        # Add delay between stocks with some randomization
+        time.sleep(3 + random.uniform(0, 2))
+        
+    except Exception as e:
+        print(f'Error processing {stock["ticker"]}: {e}')
+        time.sleep(5)
+
+
+        print(f'Updated fundamentals for {stock["ticker"]} Q{quarter} {year}')
+    stocks = _fetch_stocks_from_database()
+    if not stocks:
 
 def update_fundamentals(stock: dict, detailed_data: dict, data_source: str = 'yahoo'):
     try:
@@ -498,29 +599,6 @@ def main():
 
                 try:
                     if needs_metrics:
-                        update_metrics(stock, yahoo_data, detailed_data, data_source)
-                        print(f'Updated metrics for {stock["ticker"]} using {data_source} data')
-
-                    if needs_fundamentals:
-                        update_fundamentals(stock, detailed_data, data_source)
-                        print(f'Updated fundamentals for {stock["ticker"]} using {data_source} data')
-
-                    print(f'Completed processing {stock["ticker"]}')
-                except Exception as update_error:
-                    print(f'Error updating database for {stock["ticker"]}: {update_error}')
-                    continue
-
-            else:
-                print(f'Skipping {stock["ticker"]} - no update needed')
-
-            # Add delay between stocks with some randomization
-            time.sleep(3 + random.uniform(0, 2))
-
-        except Exception as e:
-            print(f'Error processing {stock["ticker"]}: {e}')
-            time.sleep(5)
-            continue
+        _process_single_stock(stock, session)
 
 
-if __name__ == "__main__":
-    main()
