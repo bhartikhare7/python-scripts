@@ -1,12 +1,16 @@
 import json
+import os
 from supabase import create_client, Client
 
 
 # Initialize Supabase client
-supabase: Client = create_client(
-    "SUPABASE_URL",
-    "SUPABASE_KEY"
-)
+try:
+    supabase: Client = create_client(
+        os.getenv("SUPABASE_URL"),
+        os.getenv("SUPABASE_KEY")
+    )
+except Exception:
+    supabase = None
 
 async def process_stocks(path, exchange):
     try:
