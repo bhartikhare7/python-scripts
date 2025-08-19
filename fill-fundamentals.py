@@ -347,28 +347,51 @@ def _prepare_yahoo_fundamentals(stock: dict, quarter: int, year: int, income_stm
     }
 
 
+def _safe_float_convert(value, default=0):
+    """Safely convert a value to float, returning None if conversion fails or value is falsy"""
+    try:
+        result = float(value or default)
+        return result if result != 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
 def _prepare_alpha_vantage_fundamentals(stock: dict, quarter: int, year: int, income_stmt: dict, 
                                        balance_sheet: dict, cashflow: dict, detailed_data: dict):
     """Prepare fundamentals data for Alpha Vantage source"""
     print(f"AV fundamental data for {stock} : {detailed_data}")
-    return {
-        'stock_id': stock['ticker'],
-        'period_type': 'QUARTER',
-        'quarter': quarter,
-        'year': year,
-        'revenue': float(income_stmt.get('totalRevenue', 0)) or None,
-        'expenses': float(income_stmt.get('totalExpenses', 0)) or None,
-        'profit': float(income_stmt.get('grossProfit', 0)) or None,
-        'assets': float(balance_sheet.get('totalAssets', 0)) or None,
-        'liabilities': float(balance_sheet.get('totalLiabilities', 0)) or None,
-        'operating_cashflow': float(cashflow.get('operatingCashflow', 0)) or None,
-        'investing_cashflow': float(cashflow.get('cashflowFromInvestment', 0)) or None,
-        'financing_cashflow': float(cashflow.get('cashflowFromFinancing', 0)) or None,
-        'pe_ratio': float(detailed_data.get('overview', {}).get('PERatio', 0)) or None,
-        'ps_ratio': float(detailed_data.get('overview', {}).get('PriceToSalesRatioTTM', 0)) or None,
-        'roe': float(detailed_data.get('overview', {}).get('ReturnOnEquityTTM', 0)) or None,
-        'debt_to_equity': float(detailed_data.get('overview', {}).get('DebtToEquityRatio', 0)) or None,
-    }
+    
+    # Extract overview data once
+    overview = detailed_data.get('overview', {})
+    
+    # Define field mappings for cleaner extraction
+    income_fields = [('totalRevenue', 'revenue'), ('totalExpenses', 'expenses'), ('grossProfit', 'profit')]
+    balance_fields = [('totalAssets', 'assets'), ('totalLiabilities', 'liabilities')]
+    cashflow_fields = [
+        ('operatingCashflow', 'operating_cashflow'),
+        ('cashflowFromInvestment', 'investing_cashflow'), 
+        ('cashflowFromFinancing', 'financing_cashflow')
+    ]
+    ratio_fields = [('PERatio', 'pe_ratio'), ('PriceToSalesRatioTTM', 'ps_ratio'), 
+                   ('ReturnOnEquityTTM', 'roe'), ('DebtToEquityRatio', 'debt_to_equity')]
+    
+    # Build fundamentals dict
+    fundamentals = {'stock_id': stock['ticker'], 'period_type': 'QUARTER', 'quarter': quarter, 'year': year}
+    
+    # Process each category of fields
+    for source_key, target_key in income_fields:
+        fundamentals[target_key] = _safe_float_convert(income_stmt.get(source_key))
+    
+    for source_key, target_key in balance_fields:
+        fundamentals[target_key] = _safe_float_convert(balance_sheet.get(source_key))
+    
+    for source_key, target_key in cashflow_fields:
+        fundamentals[target_key] = _safe_float_convert(cashflow.get(source_key))
+    
+    for source_key, target_key in ratio_fields:
+        fundamentals[target_key] = _safe_float_convert(overview.get(source_key))
+    
+    return fundamentals
 
 
 def _upsert_fundamentals_record(stock: dict, fundamentals: dict, quarter: int, year: int):
