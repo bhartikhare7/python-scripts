@@ -48,7 +48,7 @@ class TestMergeStocksData(unittest.TestCase):
             ]
         }
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('fmerge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_new_stocks_only(self, mock_print, mock_file, mock_supabase):
@@ -65,7 +65,7 @@ class TestMergeStocksData(unittest.TestCase):
         mock_supabase.table.assert_called_with('stocks_search')
         self.assertEqual(mock_supabase.table.return_value.upsert.call_count, 1)
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_with_existing_stocks(self, mock_print, mock_file, mock_supabase):
@@ -81,7 +81,7 @@ class TestMergeStocksData(unittest.TestCase):
         # Verify upsert was called for new stocks
         self.assertEqual(mock_supabase.table.return_value.upsert.call_count, 1)
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_market_cap_na_handling(self, mock_print, mock_file, mock_supabase):
@@ -104,7 +104,7 @@ class TestMergeStocksData(unittest.TestCase):
         call_args = mock_supabase.table.return_value.upsert.call_args[0][0]
         self.assertIsNone(call_args[0]['market_cap'])
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_update_null_market_cap(self, mock_print, mock_file, mock_supabase):
@@ -128,7 +128,7 @@ class TestMergeStocksData(unittest.TestCase):
         # Verify upsert was called twice (once for updates)
         self.assertEqual(mock_supabase.table.return_value.upsert.call_count, 2)
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_batch_processing(self, mock_print, mock_file, mock_supabase):
@@ -154,7 +154,7 @@ class TestMergeStocksData(unittest.TestCase):
         # Verify multiple batches were processed (1500 items = 2 batches)
         self.assertEqual(mock_supabase.table.return_value.upsert.call_count, 2)
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_supabase_error(self, mock_print, mock_file, mock_supabase):
@@ -173,7 +173,7 @@ class TestMergeStocksData(unittest.TestCase):
         # Verify error was printed
         mock_print.assert_any_call("Error inserting new batch 1:", "Database connection failed")
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', side_effect=FileNotFoundError("File not found"))
     @patch('builtins.print')
     async def test_process_stocks_file_not_found(self, mock_print, mock_file, mock_supabase):
@@ -184,7 +184,7 @@ class TestMergeStocksData(unittest.TestCase):
         # Verify error was caught and printed
         mock_print.assert_any_call('Error processing stocks:', 'File not found')
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_invalid_json(self, mock_print, mock_file, mock_supabase):
@@ -198,7 +198,7 @@ class TestMergeStocksData(unittest.TestCase):
         # Verify error was caught and printed
         self.assertTrue(any('Error processing stocks:' in str(call) for call in mock_print.call_args_list))
 
-    @patch('final_scripts.merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_exchange_parameter(self, mock_print, mock_file, mock_supabase):
