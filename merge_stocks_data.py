@@ -1,16 +1,11 @@
 import json
-from dotenv import load_dotenv
 from supabase import create_client, Client
 
-from final_scripts.env import SUPABASE_URL, SUPABASE_KEY
-
-# Load environment variables
-load_dotenv()
 
 # Initialize Supabase client
 supabase: Client = create_client(
-    SUPABASE_URL,
-    SUPABASE_KEY
+    "SUPABASE_URL",
+    "SUPABASE_KEY"
 )
 
 async def process_stocks(path, exchange):
