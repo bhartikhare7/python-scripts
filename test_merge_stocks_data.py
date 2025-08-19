@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, patch, mock_open, MagicMock
 import json
 import asyncio
-from final_scripts.merge_stocks_data import process_stocks
+from merge_stocks_data import process_stocks
 
 
 class TestMergeStocksData(unittest.TestCase):
