@@ -437,6 +437,93 @@ def update_fundamentals(stock: dict, detailed_data: dict, data_source: str = 'ya
         raise e
 
 
+def _should_update_metrics(stock: dict) -> bool:
+    """Check if stock metrics need updating"""
+    try:
+        metrics = supabase.table('stock_metrics').select('updated_at').eq('stock_id', stock['ticker']).execute()
+        current_time = datetime.now(timezone.utc)
+        
+        if metrics.data:
+            last_update = datetime.fromisoformat(metrics.data[0]['updated_at'])
+            if last_update.tzinfo is None:
+                last_update = last_update.replace(tzinfo=timezone.utc)
+            return (current_time - last_update) > timedelta(minutes=15)
+        return True
+    except Exception as e:
+        print(f"Error checking metrics update need for {stock['ticker']}: {e}")
+        return True
+
+
+def _should_update_fundamentals(stock: dict) -> bool:
+    """Check if stock fundamentals need updating"""
+    try:
+        fundamentals = supabase.table('stock_fundamentals').select('created_at').eq('stock_id', stock['ticker']) \
+            .order('created_at', desc=True).limit(1).execute()
+        current_time = datetime.now(timezone.utc)
+        
+        if fundamentals.data:
+            last_fundamental = datetime.fromisoformat(fundamentals.data[0]['created_at'])
+            if last_fundamental.tzinfo is None:
+                last_fundamental = last_fundamental.replace(tzinfo=timezone.utc)
+            return (current_time - last_fundamental) > timedelta(days=1)
+        return True
+    except Exception as e:
+        print(f"Error checking fundamentals update need for {stock['ticker']}: {e}")
+        return True
+
+
+def _fetch_stock_data(stock: dict, session):
+    """Fetch stock data from available sources"""
+    # Try Yahoo Finance first
+    yahoo_data = fetch_yahoo_data(stock['ticker'], session)
+    if yahoo_data:
+        print(f"sleep for 2 sec after YF returns response for {stock}")
+        time.sleep(2)
+        detailed_data = fetch_detailed_yahoo_data(stock['ticker'], session)
+        return yahoo_data, detailed_data, 'yahoo'
+    
+    # If Yahoo fails, try Alpha Vantage
+    print(f"Yahoo Finance failed for {stock['ticker']}, trying Alpha Vantage...")
+    alpha_data = fetch_alpha_vantage_data(stock['ticker'])
+    if alpha_data:
+        print(f"sleep for 15 sec after AV returns response for {stock}")
+        time.sleep(15)
+        return alpha_data, alpha_data, 'alpha_vantage'
+    
+    return None, None, None
+
+
+def _process_single_stock(stock: dict, session):
+    """Process a single stock for metrics and fundamentals updates"""
+    print(f'Processing {stock["ticker"]}...')
+    
+    needs_metrics = _should_update_metrics(stock)
+    needs_fundamentals = _should_update_fundamentals(stock)
+    
+    if not needs_metrics and not needs_fundamentals:
+        print(f'Skipping {stock["ticker"]} - no update needed')
+        return
+    
+    yahoo_data, detailed_data, data_source = _fetch_stock_data(stock, session)
+    
+    if not yahoo_data or not detailed_data:
+        print(f'Skipping {stock["ticker"]} - failed to fetch data from both sources')
+        return
+    
+    try:
+        if needs_metrics:
+            update_metrics(stock, yahoo_data, detailed_data, data_source)
+            print(f'Updated metrics for {stock["ticker"]} using {data_source} data')
+        
+        if needs_fundamentals:
+            update_fundamentals(stock, detailed_data, data_source)
+            print(f'Updated fundamentals for {stock["ticker"]} using {data_source} data')
+        
+        print(f'Completed processing {stock["ticker"]}')
+    except Exception as update_error:
+        print(f'Error updating database for {stock["ticker"]}: {update_error}')
+
+
 def main():
     try:
         stocks = supabase.table('stocks').select('*').execute().data
@@ -453,79 +540,9 @@ def main():
 
     for stock in stocks:
         try:
-            print(f'Processing {stock["ticker"]}...')
-
-            # Check metrics update need
-            metrics = supabase.table('stock_metrics').select('updated_at').eq('stock_id', stock['ticker']).execute()
-
-            current_time = datetime.now(timezone.utc)
-            if metrics.data:
-                last_update = datetime.fromisoformat(metrics.data[0]['updated_at'])
-                if last_update.tzinfo is None:
-                    last_update = last_update.replace(tzinfo=timezone.utc)
-                needs_metrics = (current_time - last_update) > timedelta(minutes=15)
-            else:
-                needs_metrics = True
-
-            # Check fundamentals update need
-            fundamentals = supabase.table('stock_fundamentals').select('created_at').eq('stock_id', stock['ticker']) \
-                .order('created_at', desc=True).limit(1).execute()
-
-            if fundamentals.data:
-                last_fundamental = datetime.fromisoformat(fundamentals.data[0]['created_at'])
-                if last_fundamental.tzinfo is None:
-                    last_fundamental = last_fundamental.replace(tzinfo=timezone.utc)
-                needs_fundamentals = (current_time - last_fundamental) > timedelta(days=1)
-            else:
-                needs_fundamentals = True
-
-            if needs_metrics or needs_fundamentals:
-                # Try Yahoo Finance first
-                yahoo_data = fetch_yahoo_data(stock['ticker'], session)
-                if yahoo_data:
-                    print(f"sleep for 2 sec after YF returns response for {stock}")
-                    time.sleep(2)
-                    detailed_data = fetch_detailed_yahoo_data(stock['ticker'], session)
-                    data_source = 'yahoo'
-                else:
-                    # If Yahoo fails, wait and try Alpha Vantage
-                    print(f"Yahoo Finance failed for {stock['ticker']}, trying Alpha Vantage...")
-                    # time.sleep(30)
-                    alpha_data = fetch_alpha_vantage_data(stock['ticker'])
-                    if alpha_data:
-                        print(f"sleep for 15 sec after AV returns response for {stock}")
-                        time.sleep(15)  # immediately sleep to avoid rate limit
-                        yahoo_data = alpha_data
-                        detailed_data = alpha_data  # Alpha Vantage data is already detailed
-                        data_source = 'alpha_vantage'
-                    else:
-                        detailed_data = None
-                        data_source = None
-
-                if not yahoo_data or not detailed_data:
-                    print(f'Skipping {stock["ticker"]} - failed to fetch data from both sources')
-                    continue
-
-                try:
-                    if needs_metrics:
-                        update_metrics(stock, yahoo_data, detailed_data, data_source)
-                        print(f'Updated metrics for {stock["ticker"]} using {data_source} data')
-
-                    if needs_fundamentals:
-                        update_fundamentals(stock, detailed_data, data_source)
-                        print(f'Updated fundamentals for {stock["ticker"]} using {data_source} data')
-
-                    print(f'Completed processing {stock["ticker"]}')
-                except Exception as update_error:
-                    print(f'Error updating database for {stock["ticker"]}: {update_error}')
-                    continue
-
-            else:
-                print(f'Skipping {stock["ticker"]} - no update needed')
-
+            _process_single_stock(stock, session)
             # Add delay between stocks with some randomization
             time.sleep(3 + random.uniform(0, 2))
-
         except Exception as e:
             print(f'Error processing {stock["ticker"]}: {e}')
             time.sleep(5)
