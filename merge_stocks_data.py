@@ -12,7 +12,7 @@ try:
 except Exception:
     supabase = None
 
-def _fetch_existing_stocks():
+def fetch_existing_stocks():
     """Fetch existing stocks from Supabase and create lookup map."""
     response = supabase.table('stocks_search').select('id', 'ticker', 'market_cap').execute()
     existing_stocks = response.data
@@ -73,7 +73,7 @@ def _print_summary(existing_count, new_stocks_count, updated_stocks_count):
 async def process_stocks(path, exchange):
     try:
         # Fetch existing stocks from Supabase
-        existing_symbol_to_id_map = _fetch_existing_stocks()
+        existing_symbol_to_id_map = fetch_existing_stocks()
         
         # Process stock data from file
         new_stocks, to_be_updated = _process_stock_data(path, exchange, existing_symbol_to_id_map)
