@@ -48,7 +48,7 @@ class TestMergeStocksData(unittest.TestCase):
             ]
         }
 
-    @patch('fmerge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_new_stocks_only(self, mock_print, mock_file, mock_supabase):
