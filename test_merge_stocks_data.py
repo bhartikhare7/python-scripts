@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, patch, mock_open, MagicMock
 import json
 import asyncio
-from merge_stocks_data import process_stocks
+from merge_stocks_data import process_stocks, fetch_existing_stocks
 
 
 class TestMergeStocksData(unittest.TestCase):
@@ -49,6 +49,68 @@ class TestMergeStocksData(unittest.TestCase):
         }
 
     @patch('merge_stocks_data.supabase')
+    @patch('merge_stocks_data.supabase')
+    def test_fetch_existing_stocks_success(self, mock_supabase):
+        """Test successful fetching of existing stocks."""
+        # Setup mock response
+        mock_response = Mock()
+        mock_response.data = [
+            {"id": 1, "ticker": "AAPL", "market_cap": 3000000000000},
+            {"id": 2, "ticker": "GOOGL", "market_cap": None},
+            {"id": 3, "ticker": "TSLA", "market_cap": 800000000000}
+        ]
+        mock_supabase.table.return_value.select.return_value.execute.return_value = mock_response
+
+        # Execute
+        result = fetch_existing_stocks()
+
+        # Verify
+        mock_supabase.table.assert_called_once_with('stocks_search')
+        mock_supabase.table.return_value.select.assert_called_once_with('id', 'ticker', 'market_cap')
+        
+        expected_result = {
+            'AAPL': {'id': 1, 'market_cap': 3000000000000},
+            'GOOGL': {'id': 2, 'market_cap': None},
+            'TSLA': {'id': 3, 'market_cap': 800000000000}
+        }
+        self.assertEqual(result, expected_result)
+
+    @patch('merge_stocks_data.supabase')
+    def test_fetch_existing_stocks_empty_result(self, mock_supabase):
+        """Test fetching existing stocks when no stocks exist."""
+        # Setup mock response with empty data
+        mock_response = Mock()
+        mock_response.data = []
+        mock_supabase.table.return_value.select.return_value.execute.return_value = mock_response
+
+        # Execute
+        result = fetch_existing_stocks()
+
+        # Verify
+        mock_supabase.table.assert_called_once_with('stocks_search')
+        self.assertEqual(result, {})
+
+    @patch('merge_stocks_data.supabase')
+    def test_fetch_existing_stocks_with_null_values(self, mock_supabase):
+        """Test fetching existing stocks with null market cap values."""
+        # Setup mock response with null market_cap
+        mock_response = Mock()
+        mock_response.data = [
+            {"id": 1, "ticker": "NVDA", "market_cap": None},
+            {"id": 2, "ticker": "AMD", "market_cap": 250000000000}
+        ]
+        mock_supabase.table.return_value.select.return_value.execute.return_value = mock_response
+
+        # Execute
+        result = fetch_existing_stocks()
+
+        # Verify
+        expected_result = {
+            'NVDA': {'id': 1, 'market_cap': None},
+            'AMD': {'id': 2, 'market_cap': 250000000000}
+        }
+        self.assertEqual(result, expected_result)
+
     @patch('builtins.open', new_callable=mock_open)
     @patch('builtins.print')
     async def test_process_stocks_new_stocks_only(self, mock_print, mock_file, mock_supabase):
