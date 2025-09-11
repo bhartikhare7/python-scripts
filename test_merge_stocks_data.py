@@ -49,7 +49,6 @@ class TestMergeStocksData(unittest.TestCase):
         }
 
     @patch('merge_stocks_data.supabase')
-    @patch('merge_stocks_data.supabase')
     def test_fetch_existing_stocks_success(self, mock_supabase):
         """Test successful fetching of existing stocks."""
         # Setup mock response
