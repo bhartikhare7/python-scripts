@@ -1,3 +1,88 @@
+import unittest
+from unittest.mock import patch, MagicMock
+import os
+import sys
+
+# Add the parent directory to the path to import the module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from merge_stocks_data import fetch_existing_stocks
+
+
+class TestFetchExistingStocks(unittest.TestCase):
+    """Test cases for fetch_existing_stocks function."""
+
+    @patch('merge_stocks_data.supabase')
+    def test_fetch_existing_stocks_success(self, mock_supabase):
+        """Test successful fetching of existing stocks."""
+        # Mock response data
+        mock_response_data = [
+            {'id': 1, 'ticker': 'AAPL', 'market_cap': 2500000000000},
+            {'id': 2, 'ticker': 'GOOGL', 'market_cap': 1800000000000},
+            {'id': 3, 'ticker': 'MSFT', 'market_cap': 2200000000000}
+        ]
+        
+        # Configure mock
+        mock_response = MagicMock()
+        mock_response.data = mock_response_data
+        mock_supabase.table.return_value.select.return_value.execute.return_value = mock_response
+        
+        # Call function
+        result = fetch_existing_stocks()
+        
+        # Verify supabase calls
+        mock_supabase.table.assert_called_once_with('stocks_search')
+        mock_supabase.table.return_value.select.assert_called_once_with('id', 'ticker', 'market_cap')
+        mock_supabase.table.return_value.select.return_value.execute.assert_called_once()
+        
+        # Verify result structure
+        expected_result = {
+            'AAPL': {'id': 1, 'market_cap': 2500000000000},
+            'GOOGL': {'id': 2, 'market_cap': 1800000000000},
+            'MSFT': {'id': 3, 'market_cap': 2200000000000}
+        }
+        self.assertEqual(result, expected_result)
+
+    @patch('merge_stocks_data.supabase')
+    def test_fetch_existing_stocks_empty_response(self, mock_supabase):
+        """Test fetching when no stocks exist."""
+        # Mock empty response
+        mock_response = MagicMock()
+        mock_response.data = []
+        mock_supabase.table.return_value.select.return_value.execute.return_value = mock_response
+        
+        # Call function
+        result = fetch_existing_stocks()
+        
+        # Verify result is empty dict
+        self.assertEqual(result, {})
+
+    @patch('merge_stocks_data.supabase')
+    def test_fetch_existing_stocks_with_null_market_cap(self, mock_supabase):
+        """Test fetching stocks with null market cap values."""
+        # Mock response with null market cap
+        mock_response_data = [
+            {'id': 1, 'ticker': 'AAPL', 'market_cap': None},
+            {'id': 2, 'ticker': 'GOOGL', 'market_cap': 1800000000000}
+        ]
+        
+        mock_response = MagicMock()
+        mock_response.data = mock_response_data
+        mock_supabase.table.return_value.select.return_value.execute.return_value = mock_response
+        
+        # Call function
+        result = fetch_existing_stocks()
+        
+        # Verify result handles null values correctly
+        expected_result = {
+            'AAPL': {'id': 1, 'market_cap': None},
+            'GOOGL': {'id': 2, 'market_cap': 1800000000000}
+        }
+        self.assertEqual(result, expected_result)
+
+
+if __name__ == '__main__':
+    unittest.main()
 import json
 import os
 
