@@ -119,12 +119,18 @@ def unused_function():
 
 def main():
     """Main function that uses the class"""
-    example = LargeExampleClass()
-    result = example.simple_method_using_other_methods(1, 2, 3)
-    complex_result = example.complex_method_with_many_branches(5, 3, 1)
-    
-    print(f"Result: {result}")
-    print(f"Complex result: {complex_result}")
+    try:
+        example = LargeExampleClass()
+        result = example.simple_method_using_other_methods(1, 2, 3)
+        complex_result = example.complex_method_with_many_branches(5, 3, 1)
+        
+        print(f"Result: {result}")
+        print(f"Complex result: {complex_result}")
+    except Exception as e:
+        print(f"Error occurred in main: {e}")
+        # Log the error or handle it appropriately
+        import sys
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
